@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "LeafCheck AI"
+description = "A farmer-friendly plant disease detection website for Capsicum, Potato, and Tomato leaves, with a guided scan flow, mock AI results, and research-backed education."
+version = "1.0.0"
+id = "artifacts/leafcheck-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19909
+
+[services.development]
+run = "pnpm --filter @workspace/leafcheck-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/leafcheck-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/leafcheck-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19909"
+BASE_PATH = "/"
