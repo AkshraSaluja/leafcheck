@@ -5,7 +5,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import {
   ArrowRight, Camera, Check, CircleHelp, Clock3, FileImage,
-  History, Info, Leaf, Menu, RefreshCw, ScanLine, ShieldCheck,
+  History, Info, Leaf, Loader2, Menu, RefreshCw, ScanLine, ShieldCheck,
   Sprout, Upload, X, Zap, AlertTriangle, BookOpen, BarChart3, Layers3,
 } from 'lucide-react';
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
@@ -13,18 +13,20 @@ import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient();
 
-type Crop = 'Tomato' | 'Potato' | 'Capsicum';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+
+type Crop = string;
 type ScanResult = {
   crop: Crop;
   healthy: boolean;
-  disease: string | null;
+  disease: string;
   confidence: number;
   advice: string[];
   image?: string;
   createdAt: string;
 };
 
-const cropNotes: Record<Crop, string> = {
+const cropNotes: Record<string, string> = {
   Tomato: 'Look for spots, curling, or yellowing between the veins.',
   Potato: 'Use a clear view of the top of the leaf and any marks.',
   Capsicum: 'Capture the whole leaf, including the edges and underside if possible.',
@@ -128,7 +130,7 @@ function Home() {
             <Link href="/scan" data-testid="link-hero-scan" className="group inline-flex items-center justify-center gap-3 rounded-full bg-[hsl(var(--primary))] px-6 py-3.5 font-semibold text-[hsl(var(--primary-foreground))] shadow-[var(--shadow-md)] transition-all hover:-translate-y-1 hover:shadow-[var(--shadow-lg)] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] focus:ring-offset-2">Check a leaf <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></Link>
             <Link href="/how-it-works" data-testid="link-hero-learn" className="inline-flex items-center justify-center gap-2 rounded-full border border-[hsl(var(--border))] px-6 py-3.5 font-semibold text-[hsl(var(--primary))] transition-colors hover:bg-[hsl(var(--secondary))]">See how it works</Link>
           </div>
-          <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 text-sm text-[hsl(var(--muted-foreground))]"><span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-[hsl(var(--primary))]" /> Private on your device</span><span className="flex items-center gap-2"><Zap className="h-4 w-4 text-[hsl(var(--primary))]" /> A few seconds</span></div>
+          <div className="mt-10 flex flex-wrap gap-x-6 gap-y-3 text-sm text-[hsl(var(--muted-foreground))]"><span className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-[hsl(var(--primary))]" /> AI-powered analysis</span><span className="flex items-center gap-2"><Zap className="h-4 w-4 text-[hsl(var(--primary))]" /> A few seconds</span></div>
         </div>
         <div className="rise-in delay-2 relative">
           <div className="absolute -right-4 -top-5 rounded-full bg-[hsl(var(--accent))] px-4 py-2 font-mono-app text-[10px] font-medium tracking-wide text-[hsl(var(--accent-foreground))] shadow-[var(--shadow-sm)] sm:right-2">FIELD NOTE  /  01</div>
@@ -171,10 +173,10 @@ function CropPicker({ crop, setCrop }: { crop: Crop; setCrop: (crop: Crop) => vo
 function ScanPage() {
   const [crop, setCrop] = useState<Crop>('Tomato');
   const [image, setImage] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState('');
   const [error, setError] = useState('');
   const [analyzing, setAnalyzing] = useState(false);
-  const [progress, setProgress] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const [, setLocation] = useLocation();
 
@@ -184,34 +186,68 @@ function ScanPage() {
     if (!file) return;
     if (!file.type.startsWith('image/')) { setError('Please choose an image file, such as a JPG or PNG.'); return; }
     if (file.size > 10 * 1024 * 1024) { setError('That image is larger than 10 MB. Try a smaller photo.'); return; }
+    setSelectedFile(file);
     const reader = new FileReader();
     reader.onload = () => { setImage(String(reader.result)); setFileName(file.name); };
     reader.readAsDataURL(file);
   };
-  const reset = () => { setImage(null); setFileName(''); setError(''); setProgress(0); if (inputRef.current) inputRef.current.value = ''; };
-  const analyze = () => {
-    if (!image) { setError('Add a clear leaf photo before starting the check.'); return; }
-    setAnalyzing(true); setProgress(8);
-    const timer = window.setInterval(() => setProgress((p) => Math.min(92, p + 17)), 260);
-    window.setTimeout(() => {
-      window.clearInterval(timer);
-      const healthy = crop === 'Potato';
-      const result: ScanResult = healthy ? {
-        crop, healthy: true, disease: null, confidence: 96.1,
-        advice: ['Keep watering at the soil, not over the leaves.', 'Check the newest leaves again in a few days.', 'Give the plant good morning light and airflow.'],
-        image: image ?? undefined, createdAt: new Date().toISOString(),
-      } : {
-        crop, healthy: false, disease: crop === 'Tomato' ? 'Early blight' : 'Bacterial spot',
-        confidence: crop === 'Tomato' ? 89.4 : 87.8,
-        advice: ['Remove badly affected leaves and keep them away from your compost.', 'Water near the soil in the morning; avoid wetting the leaves.', 'If the marks spread, take this result to a local crop adviser.'],
-        image: image ?? undefined, createdAt: new Date().toISOString(),
+  const reset = () => { setImage(null); setSelectedFile(null); setFileName(''); setError(''); if (inputRef.current) inputRef.current.value = ''; };
+  const analyze = async () => {
+    if (!selectedFile || !image) { setError('Add a clear leaf photo before starting the check.'); return; }
+    setAnalyzing(true);
+    setError('');
+    try {
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+
+      const res = await fetch(`${API_BASE_URL}/predict`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        const errorMsg = data && typeof data.error === 'string'
+          ? data.error
+          : `Server error (${res.status}): Unable to process image.`;
+        throw new Error(errorMsg);
+      }
+
+      if (!data || typeof data.crop !== 'string' || typeof data.healthy !== 'boolean' || typeof data.confidence !== 'number') {
+        throw new Error('Received malformed response from the prediction server.');
+      }
+
+      const defaultAdvice = data.healthy ? [
+        'Keep watering at the soil level, avoiding the leaves.',
+        'Check leaves periodically for changes in color or spots.',
+        'Ensure adequate sunlight and proper air circulation.',
+      ] : [
+        'Isolate or remove severely affected leaves to prevent spread.',
+        'Avoid overhead watering to keep leaf surfaces dry.',
+        'Consult a local agricultural extension or specialist if symptoms persist.',
+      ];
+
+      const result: ScanResult = {
+        crop: data.crop || crop,
+        healthy: data.healthy,
+        disease: data.disease ?? (data.healthy ? 'Healthy' : 'Unspecified disease'),
+        confidence: data.confidence,
+        advice: defaultAdvice,
+        image: image ?? undefined,
+        createdAt: new Date().toISOString(),
       };
+
       const previous = JSON.parse(localStorage.getItem('leafcheck-history') ?? '[]') as ScanResult[];
       localStorage.setItem('leafcheck-result', JSON.stringify(result));
       localStorage.setItem('leafcheck-history', JSON.stringify([result, ...previous].slice(0, 5)));
-      setProgress(100);
-      window.setTimeout(() => setLocation('/result'), 380);
-    }, 1700);
+
+      setLocation('/result');
+    } catch (err: any) {
+      setError(err.message || 'Network error: Unable to connect to prediction server.');
+    } finally {
+      setAnalyzing(false);
+    }
   };
   return (
     <Shell>
@@ -226,9 +262,21 @@ function ScanPage() {
             {image && <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-[hsl(var(--secondary)/.65)] px-4 py-3 text-sm"><span className="flex min-w-0 items-center gap-2 truncate text-[hsl(var(--foreground))]"><FileImage className="h-4 w-4 shrink-0 text-[hsl(var(--primary))]" /> <span className="truncate">{fileName}</span></span><button type="button" onClick={reset} data-testid="button-reset-photo" className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[hsl(var(--primary))] hover:underline"><RefreshCw className="h-3.5 w-3.5" /> Replace</button></div>}
           </section>
           <section className="flex flex-col rounded-[2rem] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 shadow-[var(--shadow-sm)] sm:p-8">
-            <div><p className="font-mono-app text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">Step 1</p><h2 className="mt-2 font-display text-2xl text-[hsl(var(--primary))]">What are you growing?</h2><p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">{cropNotes[crop]}</p><div className="mt-5"><CropPicker crop={crop} setCrop={setCrop} /></div></div>
+            <div><p className="font-mono-app text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">Step 1</p><h2 className="mt-2 font-display text-2xl text-[hsl(var(--primary))]">What are you growing?</h2><p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">{cropNotes[crop] ?? 'Capture a clear photo of the leaf.'}</p><div className="mt-5"><CropPicker crop={crop} setCrop={setCrop} /></div></div>
             <div className="mt-8 border-t border-[hsl(var(--border))] pt-7"><p className="font-mono-app text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">Step 2</p><div className="mt-3 flex items-start gap-3 text-sm leading-6 text-[hsl(var(--muted-foreground))]"><Info className="mt-1 h-4 w-4 shrink-0 text-[hsl(var(--accent))]" /><span>One leaf is enough. A close, bright photo gives the clearest first read.</span></div></div>
-            <div className="mt-auto pt-8">{error && <p role="alert" data-testid="status-scan-error" className="mb-4 flex items-start gap-2 text-sm leading-5 text-[hsl(var(--destructive))]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{error}</p>}{analyzing ? <div data-testid="status-analysis-progress"><div className="mb-3 flex items-center justify-between text-sm font-medium text-[hsl(var(--primary))]"><span className="flex items-center gap-2"><ScanLine className="h-4 w-4" /> Looking at your leaf...</span><span className="font-mono-app text-xs">{progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-[hsl(var(--secondary))]"><div className="h-full rounded-full bg-[hsl(var(--accent))] transition-all duration-300" style={{ width: `${progress}%` }} /></div><p className="mt-3 text-xs text-[hsl(var(--muted-foreground))]">This is a local demo check — no photo leaves your device.</p></div> : <button type="button" onClick={analyze} data-testid="button-analyze-leaf" className="flex w-full items-center justify-center gap-2 rounded-full bg-[hsl(var(--primary))] px-5 py-3.5 font-semibold text-[hsl(var(--primary-foreground))] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] focus:ring-offset-2">Check this leaf <ArrowRight className="h-4 w-4" /></button>}</div>
+            <div className="mt-auto pt-8">
+              {error && <p role="alert" data-testid="status-scan-error" className="mb-4 flex items-start gap-2 text-sm leading-5 text-[hsl(var(--destructive))]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{error}</p>}
+              {analyzing ? (
+                <div data-testid="status-analysis-progress" className="flex items-center justify-center gap-3 rounded-full bg-[hsl(var(--secondary))] px-5 py-3.5 text-sm font-medium text-[hsl(var(--primary))]">
+                  <Loader2 className="h-4 w-4 animate-spin text-[hsl(var(--accent))]" />
+                  <span>Analyzing leaf with AI...</span>
+                </div>
+              ) : (
+                <button type="button" onClick={analyze} disabled={analyzing} data-testid="button-analyze-leaf" className="flex w-full items-center justify-center gap-2 rounded-full bg-[hsl(var(--primary))] px-5 py-3.5 font-semibold text-[hsl(var(--primary-foreground))] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] focus:ring-offset-2 disabled:opacity-50">
+                  Check this leaf <ArrowRight className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </section>
         </div>
         <HistoryBlock />
@@ -250,10 +298,15 @@ function ResultPage() {
     document.title = 'Your leaf check — LeafCheck AI';
     try {
       const saved = localStorage.getItem('leafcheck-result');
-      setResult(saved ? JSON.parse(saved) as ScanResult : { crop: 'Tomato', healthy: true, disease: null, confidence: 94.2, advice: ['Take another photo in a few days to compare.', 'Keep the leaves dry when watering.', 'Ask a local crop adviser if the change spreads.'], createdAt: new Date().toISOString() });
+      setResult(saved ? JSON.parse(saved) as ScanResult : null);
     } catch { setResult(null); }
   }, []);
   if (!result) return <Shell><div className="mx-auto max-w-2xl px-5 py-24 text-center"><p className="text-sm text-[hsl(var(--destructive))]">We could not open that check.</p><Link href="/scan" data-testid="link-result-retry" className="mt-5 inline-flex rounded-full bg-[hsl(var(--primary))] px-5 py-3 text-sm font-semibold text-[hsl(var(--primary-foreground))]">Try another photo</Link></div></Shell>;
+  
+  const displayConfidence = typeof result.confidence === 'number'
+    ? (result.confidence <= 1 ? result.confidence * 100 : result.confidence)
+    : 0;
+
   return <Shell><div className="mx-auto max-w-6xl px-5 pb-20 pt-12 sm:px-8 sm:pt-16"><div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><p className="font-mono-app text-xs uppercase tracking-[.18em] text-[hsl(var(--accent))]">Leaf check / result</p><h1 className="mt-4 font-display text-5xl leading-[.98] tracking-[-.05em] text-[hsl(var(--primary))]">Here is your first read.</h1></div><span className="font-mono-app text-xs text-[hsl(var(--muted-foreground))]">{new Date(result.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span></div>
     <div className="mt-12 grid gap-8 lg:grid-cols-[.85fr_1.15fr]">
       <div className="overflow-hidden rounded-[2rem] bg-[#dce8d7]">{result.image ? <img src={result.image} alt={`Uploaded ${result.crop} leaf`} data-testid="img-result-leaf" className="aspect-square w-full object-contain p-4" /> : <div className="p-6"><LeafScanIllustration compact /></div>}</div>
@@ -261,7 +314,7 @@ function ResultPage() {
         <div className="flex flex-wrap items-center gap-3"><span className="rounded-full bg-[hsl(var(--secondary))] px-3 py-1.5 text-xs font-semibold text-[hsl(var(--primary))]">{result.crop}</span><span className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${result.healthy ? 'bg-[hsl(var(--primary)/.1)] text-[hsl(var(--primary))]' : 'bg-[hsl(var(--accent)/.14)] text-[hsl(var(--accent-foreground))]'}`}><span className={`h-1.5 w-1.5 rounded-full ${result.healthy ? 'bg-[hsl(var(--primary))]' : 'bg-[hsl(var(--accent))]'}`} />{result.healthy ? 'Looks healthy' : 'Needs a closer look'}</span></div>
         <h2 data-testid="text-result-disease" className="mt-8 font-display text-4xl leading-tight tracking-[-.035em] text-[hsl(var(--primary))]">{result.healthy ? 'No clear signs of disease' : result.disease}</h2>
         <p className="mt-4 max-w-xl text-base leading-7 text-[hsl(var(--muted-foreground))]">{result.healthy ? 'The photo looks like a healthy leaf to us. Keep an eye on the plant as it grows.' : 'The photo shows patterns that can be associated with this issue. It is a useful signal, not a final diagnosis.'}</p>
-        <div className="mt-8 border-y border-[hsl(var(--border))] py-5"><div className="flex items-center justify-between text-sm"><span className="text-[hsl(var(--muted-foreground))]">Confidence in this first read</span><strong data-testid="text-result-confidence" className="font-mono-app text-[hsl(var(--primary))]">{result.confidence.toFixed(1)}%</strong></div><div className="mt-3 h-2 rounded-full bg-[hsl(var(--secondary))]"><div className="h-full rounded-full bg-[hsl(var(--accent))]" style={{ width: `${result.confidence}%` }} /></div></div>
+        <div className="mt-8 border-y border-[hsl(var(--border))] py-5"><div className="flex items-center justify-between text-sm"><span className="text-[hsl(var(--muted-foreground))]">Confidence in this first read</span><strong data-testid="text-result-confidence" className="font-mono-app text-[hsl(var(--primary))]">{displayConfidence.toFixed(1)}%</strong></div><div className="mt-3 h-2 rounded-full bg-[hsl(var(--secondary))]"><div className="h-full rounded-full bg-[hsl(var(--accent))]" style={{ width: `${Math.min(100, Math.max(0, displayConfidence))}%` }} /></div></div>
         <div className="mt-7"><h3 className="flex items-center gap-2 font-semibold text-[hsl(var(--foreground))]"><Sprout className="h-4 w-4 text-[hsl(var(--accent))]" /> What you can do now</h3><ul className="mt-4 space-y-3">{result.advice.map((advice, i) => <li key={advice} data-testid={`text-result-advice-${i}`} className="flex gap-3 text-sm leading-6 text-[hsl(var(--muted-foreground))]"><span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[hsl(var(--secondary))] font-mono-app text-[10px] text-[hsl(var(--primary))]">{i + 1}</span>{advice}</li>)}</ul></div>
         <div className="mt-9 flex flex-col gap-3 sm:flex-row"><Link href="/scan" data-testid="link-result-rescan" className="inline-flex items-center justify-center gap-2 rounded-full bg-[hsl(var(--primary))] px-5 py-3 font-semibold text-[hsl(var(--primary-foreground))] transition-transform hover:-translate-y-0.5"><RefreshCw className="h-4 w-4" /> Check another leaf</Link><button type="button" onClick={() => { localStorage.removeItem('leafcheck-result'); setLocation('/scan'); }} data-testid="button-clear-result" className="inline-flex items-center justify-center gap-2 rounded-full border border-[hsl(var(--border))] px-5 py-3 font-semibold text-[hsl(var(--primary))] hover:bg-[hsl(var(--secondary))]">Clear result</button></div>
       </div>
