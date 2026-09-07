@@ -1,11 +1,13 @@
 import os
 import json
 import numpy as np
-
 from PIL import Image, UnidentifiedImageError
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from tensorflow.keras.models import load_model
+try:
+    from tf_keras.models import load_model
+except ImportError:
+    from tensorflow.keras.models import load_model
 
 
 # -----------------------------

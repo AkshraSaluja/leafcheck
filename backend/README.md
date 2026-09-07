@@ -52,16 +52,32 @@ Example successful response:
 
 ## Run Locally
 
+### Option 1: On Windows (PowerShell)
+
+Activate the virtual environment:
+
+```powershell
+.\backend\venv\Scripts\Activate.ps1
+```
+
+Or run directly with the virtual environment's Python executable:
+
+```powershell
+.\backend\venv\Scripts\python.exe backend\app.py
+```
+
+### Option 2: On Linux / macOS
+
 Activate the virtual environment:
 
 ```bash
-source venv/bin/activate
+source backend/venv/bin/activate
 ```
 
 Start the Flask server:
 
 ```bash
-python3 app.py
+python backend/app.py
 ```
 
 The API will run at:
