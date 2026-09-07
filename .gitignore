@@ -61,3 +61,7 @@ dist/
 
 # TypeScript build info
 *.tsbuildinfo
+__MACOSX/
+backend/venv/
+output.zip
+train/
