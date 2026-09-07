@@ -1,6 +1,6 @@
-# LeafCheck AI Backend
+# LeafLens AI Backend
 
-Flask backend API for the LeafCheck AI plant disease detection application.
+Flask backend API for the LeafLens AI plant disease detection application.
 
 The backend accepts a leaf image, preprocesses it, runs it through the trained plant disease classification model, and returns the predicted crop, disease, health status, and confidence score.
 
