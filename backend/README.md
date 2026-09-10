@@ -37,7 +37,11 @@ Request type:
 
 Image field name:
 
-`image`
+`image` (required)
+
+Optional form field:
+
+`crop` (optional: `auto`, `Tomato`, `Potato`, `Capsicum` / `Pepper` to filter predictions to a specific crop)
 
 Example successful response:
 

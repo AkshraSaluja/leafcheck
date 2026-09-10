@@ -7,6 +7,7 @@ import {
   ArrowRight, Camera, Check, CircleHelp, Clock3, FileImage,
   History, Info, Leaf, Loader2, Menu, RefreshCw, ScanLine, ShieldCheck,
   Sprout, Upload, X, Zap, AlertTriangle, BookOpen, BarChart3, Layers3,
+  Sparkles, CheckCircle2,
 } from 'lucide-react';
 import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import NotFound from '@/pages/not-found';
@@ -26,11 +27,6 @@ type ScanResult = {
   createdAt: string;
 };
 
-const cropNotes: Record<string, string> = {
-  Tomato: 'Look for spots, curling, or yellowing between the veins.',
-  Potato: 'Use a clear view of the top of the leaf and any marks.',
-  Capsicum: 'Capture the whole leaf, including the edges and underside if possible.',
-};
 
 function LeafMark({ small = false }: { small?: boolean }) {
   return (
@@ -164,14 +160,10 @@ function Home() {
   );
 }
 
-function CropPicker({ crop, setCrop }: { crop: Crop; setCrop: (crop: Crop) => void }) {
-  return <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Choose a crop">
-    {(['Tomato', 'Potato', 'Capsicum'] as Crop[]).map((item) => <button type="button" key={item} role="radio" aria-checked={crop === item} onClick={() => setCrop(item)} data-testid={`button-crop-${item.toLowerCase()}`} className={`rounded-xl border px-3 py-3 text-sm font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] ${crop === item ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-[var(--shadow-sm)]' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:border-[hsl(var(--primary)/.5)]'}`}>{item}</button>)}
-  </div>;
-}
+type DetectionMode = 'auto' | 'Potato' | 'Tomato' | 'Capsicum';
 
 function ScanPage() {
-  const [crop, setCrop] = useState<Crop>('Tomato');
+  const [detectionMode, setDetectionMode] = useState<DetectionMode>('auto');
   const [image, setImage] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState('');
@@ -199,6 +191,9 @@ function ScanPage() {
     try {
       const formData = new FormData();
       formData.append('image', selectedFile);
+      if (detectionMode !== 'auto') {
+        formData.append('crop', detectionMode);
+      }
 
       const res = await fetch(`${API_BASE_URL}/predict`, {
         method: 'POST',
@@ -228,8 +223,10 @@ function ScanPage() {
         'Consult a local agricultural extension or specialist if symptoms persist.',
       ];
 
+      const displayCrop = data.crop === 'Pepper' ? 'Capsicum (Pepper)' : data.crop;
+
       const result: ScanResult = {
-        crop: data.crop || crop,
+        crop: displayCrop,
         healthy: data.healthy,
         disease: data.disease ?? (data.healthy ? 'Healthy' : 'Unspecified disease'),
         confidence: data.confidence,
@@ -252,7 +249,7 @@ function ScanPage() {
   return (
     <Shell>
       <div className="mx-auto max-w-6xl px-5 pb-20 pt-12 sm:px-8 sm:pt-16">
-        <div className="max-w-2xl"><p className="font-mono-app text-xs uppercase tracking-[.18em] text-[hsl(var(--accent))]">Leaf check / 01</p><h1 className="mt-4 font-display text-5xl leading-[.98] tracking-[-.05em] text-[hsl(var(--primary))] sm:text-6xl">Let us take a closer look.</h1><p className="mt-5 text-base leading-7 text-[hsl(var(--muted-foreground))]">Choose your crop, add one clear leaf photo, and we will give you a calm first read.</p></div>
+        <div className="max-w-2xl"><p className="font-mono-app text-xs uppercase tracking-[.18em] text-[hsl(var(--accent))]">Leaf check / 01</p><h1 className="mt-4 font-display text-5xl leading-[.98] tracking-[-.05em] text-[hsl(var(--primary))] sm:text-6xl">Let us take a closer look.</h1><p className="mt-5 text-base leading-7 text-[hsl(var(--muted-foreground))]">Upload one clear leaf photo. Use Auto-detect or select your crop below for targeted diagnosis.</p></div>
         <div className="mt-12 grid gap-8 lg:grid-cols-[1.1fr_.9fr]">
           <section className="rounded-[2rem] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 shadow-[var(--shadow-sm)] sm:p-8" aria-label="Upload a leaf photo">
             <div className={`relative flex min-h-[340px] items-center justify-center overflow-hidden rounded-[1.4rem] border-2 border-dashed ${image ? 'border-[hsl(var(--primary)/.45)] bg-[hsl(var(--secondary)/.35)]' : 'border-[hsl(var(--border))] bg-[hsl(var(--secondary)/.28)]'}`}>
@@ -262,17 +259,125 @@ function ScanPage() {
             {image && <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-[hsl(var(--secondary)/.65)] px-4 py-3 text-sm"><span className="flex min-w-0 items-center gap-2 truncate text-[hsl(var(--foreground))]"><FileImage className="h-4 w-4 shrink-0 text-[hsl(var(--primary))]" /> <span className="truncate">{fileName}</span></span><button type="button" onClick={reset} data-testid="button-reset-photo" className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[hsl(var(--primary))] hover:underline"><RefreshCw className="h-3.5 w-3.5" /> Replace</button></div>}
           </section>
           <section className="flex flex-col rounded-[2rem] border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-5 shadow-[var(--shadow-sm)] sm:p-8">
-            <div><p className="font-mono-app text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">Step 1</p><h2 className="mt-2 font-display text-2xl text-[hsl(var(--primary))]">What are you growing?</h2><p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">{cropNotes[crop] ?? 'Capture a clear photo of the leaf.'}</p><div className="mt-5"><CropPicker crop={crop} setCrop={setCrop} /></div></div>
-            <div className="mt-8 border-t border-[hsl(var(--border))] pt-7"><p className="font-mono-app text-[10px] uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">Step 2</p><div className="mt-3 flex items-start gap-3 text-sm leading-6 text-[hsl(var(--muted-foreground))]"><Info className="mt-1 h-4 w-4 shrink-0 text-[hsl(var(--accent))]" /><span>One leaf is enough. A close, bright photo gives the clearest first read.</span></div></div>
-            <div className="mt-auto pt-8">
-              {error && <p role="alert" data-testid="status-scan-error" className="mb-4 flex items-start gap-2 text-sm leading-5 text-[hsl(var(--destructive))]"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />{error}</p>}
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-[hsl(var(--secondary))] px-3 py-1 text-xs font-semibold text-[hsl(var(--primary))]">
+                <Sparkles className="h-3.5 w-3.5 text-[hsl(var(--accent))]" />
+                <span>AI Crop & Health Scan</span>
+              </div>
+              <h2 className="mt-4 font-display text-3xl leading-tight text-[hsl(var(--primary))]">
+                Leaf Check & Diagnosis
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-[hsl(var(--muted-foreground))]">
+                Leave on <strong>Auto-detect</strong> for full automatic recognition, or select your crop below for targeted diagnosis.
+              </p>
+            </div>
+
+            <div className="mt-5 rounded-2xl border border-[hsl(var(--border)/.8)] bg-[hsl(var(--secondary)/.3)] p-4">
+              <div className="flex items-center justify-between">
+                <p className="font-mono-app text-[10px] font-medium uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">
+                  Crop Detection Mode
+                </p>
+                {detectionMode !== 'auto' && (
+                  <button
+                    type="button"
+                    onClick={() => setDetectionMode('auto')}
+                    className="text-[11px] font-semibold text-[hsl(var(--accent))] hover:underline"
+                  >
+                    Reset to Auto
+                  </button>
+                )}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <button
+                  type="button"
+                  onClick={() => setDetectionMode('auto')}
+                  className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2.5 text-xs font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] ${detectionMode === 'auto' ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-[var(--shadow-sm)]' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:border-[hsl(var(--primary)/.5)]'}`}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  <span>Auto</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDetectionMode('Potato')}
+                  className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2.5 text-xs font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] ${detectionMode === 'Potato' ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-[var(--shadow-sm)]' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:border-[hsl(var(--primary)/.5)]'}`}
+                >
+                  <span>🥔</span>
+                  <span>Potato</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDetectionMode('Tomato')}
+                  className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2.5 text-xs font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] ${detectionMode === 'Tomato' ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-[var(--shadow-sm)]' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:border-[hsl(var(--primary)/.5)]'}`}
+                >
+                  <span>🍅</span>
+                  <span>Tomato</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDetectionMode('Capsicum')}
+                  className={`flex items-center justify-center gap-1.5 rounded-xl border px-2.5 py-2.5 text-xs font-semibold transition-all focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] ${detectionMode === 'Capsicum' ? 'border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] shadow-[var(--shadow-sm)]' : 'border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--muted-foreground))] hover:border-[hsl(var(--primary)/.5)]'}`}
+                >
+                  <span>🫑</span>
+                  <span>Capsicum</span>
+                </button>
+              </div>
+              <p className="mt-2.5 text-[11px] leading-4 text-[hsl(var(--muted-foreground))]">
+                {detectionMode === 'auto' && '✨ AI will auto-detect whether the leaf is Tomato, Potato, or Capsicum.'}
+                {detectionMode === 'Potato' && '🥔 Diagnosing specifically across Potato Early Blight, Late Blight & Healthy leaf conditions.'}
+                {detectionMode === 'Tomato' && '🍅 Diagnosing specifically across 10 Tomato conditions & leaf health.'}
+                {detectionMode === 'Capsicum' && '🫑 Diagnosing specifically across Capsicum / Bell Pepper conditions.'}
+              </p>
+            </div>
+
+            <div className="mt-6 space-y-2.5">
+              <p className="font-mono-app text-[10px] font-medium uppercase tracking-[.18em] text-[hsl(var(--muted-foreground))]">
+                For clear results
+              </p>
+              <div className="grid gap-2 text-xs text-[hsl(var(--muted-foreground))]">
+                <div className="flex items-center gap-2.5 rounded-xl bg-[hsl(var(--secondary)/.35)] px-3.5 py-2.5">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[hsl(var(--primary))]" />
+                  <span><strong>Single leaf focus:</strong> Fill most of the camera frame with one leaf.</span>
+                </div>
+                <div className="flex items-center gap-2.5 rounded-xl bg-[hsl(var(--secondary)/.35)] px-3.5 py-2.5">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[hsl(var(--primary))]" />
+                  <span><strong>Natural daylight:</strong> Avoid harsh flash glare or dark shadows.</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-auto pt-7">
+              {image ? (
+                <div className="mb-4 flex items-center gap-2 rounded-xl bg-[hsl(var(--primary)/.08)] px-3.5 py-2.5 text-xs font-medium text-[hsl(var(--primary))]">
+                  <Check className="h-3.5 w-3.5 shrink-0" />
+                  <span>Photo ready — click below to start analysis</span>
+                </div>
+              ) : (
+                <div className="mb-4 flex items-center gap-2 rounded-xl bg-[hsl(var(--secondary)/.5)] px-3.5 py-2.5 text-xs text-[hsl(var(--muted-foreground))]">
+                  <Info className="h-3.5 w-3.5 shrink-0 text-[hsl(var(--accent))]" />
+                  <span>Upload or take a photo on the left to begin.</span>
+                </div>
+              )}
+
+              {error && (
+                <p role="alert" data-testid="status-scan-error" className="mb-4 flex items-start gap-2 text-sm leading-5 text-[hsl(var(--destructive))]">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{error}</span>
+                </p>
+              )}
+
               {analyzing ? (
                 <div data-testid="status-analysis-progress" className="flex items-center justify-center gap-3 rounded-full bg-[hsl(var(--secondary))] px-5 py-3.5 text-sm font-medium text-[hsl(var(--primary))]">
                   <Loader2 className="h-4 w-4 animate-spin text-[hsl(var(--accent))]" />
-                  <span>Analyzing leaf with AI...</span>
+                  <span>Identifying crop & analyzing health...</span>
                 </div>
               ) : (
-                <button type="button" onClick={analyze} disabled={analyzing} data-testid="button-analyze-leaf" className="flex w-full items-center justify-center gap-2 rounded-full bg-[hsl(var(--primary))] px-5 py-3.5 font-semibold text-[hsl(var(--primary-foreground))] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] focus:ring-offset-2 disabled:opacity-50">
+                <button
+                  type="button"
+                  onClick={analyze}
+                  disabled={analyzing}
+                  data-testid="button-analyze-leaf"
+                  className="flex w-full items-center justify-center gap-2 rounded-full bg-[hsl(var(--primary))] px-5 py-3.5 font-semibold text-[hsl(var(--primary-foreground))] shadow-[var(--shadow-sm)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))] focus:ring-offset-2 disabled:opacity-50"
+                >
                   Check this leaf <ArrowRight className="h-4 w-4" />
                 </button>
               )}
@@ -326,7 +431,7 @@ function ResultPage() {
 function HowItWorks() {
   useEffect(() => { document.title = 'How LeafCheck works — LeafCheck AI'; }, []);
   const steps = [
-    { icon: Camera, number: '01', title: 'You share a leaf', copy: 'Choose Tomato, Potato, or Capsicum, then take a bright, close photo. Nothing needs to be perfect.' },
+    { icon: Camera, number: '01', title: 'You share a leaf', copy: 'Take a clear photo of a Tomato, Potato, or Capsicum leaf. Our AI automatically detects the crop and evaluates health.' },
     { icon: ScanLine, number: '02', title: 'We look for patterns', copy: 'LeafCheck compares what it sees with crop examples and looks for visual clues that stand out.' },
     { icon: Check, number: '03', title: 'You get a next step', copy: 'The result keeps the language simple: what it may be, how sure the signal is, and what you can do now.' },
   ];

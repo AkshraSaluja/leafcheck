@@ -143,15 +143,35 @@ def predict():
             verbose=0
         )[0]
 
-        # Highest probability class
-        predicted_index = int(
-            np.argmax(predictions)
-        )
+        # Check for optional crop filter
+        requested_crop = (request.form.get("crop") or request.args.get("crop") or "").strip().lower()
 
-        # Confidence percentage
-        confidence = float(
-            predictions[predicted_index] * 100
-        )
+        crop_prefix = None
+        if requested_crop in ["potato", "potatoes"]:
+            crop_prefix = "Potato___"
+        elif requested_crop in ["tomato", "tomatoes"]:
+            crop_prefix = "Tomato___"
+        elif requested_crop in ["capsicum", "pepper", "peppers", "bell_pepper"]:
+            crop_prefix = "Pepper,_bell___"
+
+        if crop_prefix:
+            candidate_indices = [
+                int(idx) for idx, name in class_names.items()
+                if name.startswith(crop_prefix)
+            ]
+        else:
+            candidate_indices = [int(idx) for idx in class_names.keys()]
+
+        # Filter predictions to candidate classes
+        candidate_probs = [float(predictions[i]) for i in candidate_indices]
+        best_candidate_sub_index = int(np.argmax(candidate_probs))
+        predicted_index = candidate_indices[best_candidate_sub_index]
+
+        # Confidence percentage (normalized among candidate classes if filtered)
+        if crop_prefix and sum(candidate_probs) > 0:
+            confidence = float((candidate_probs[best_candidate_sub_index] / sum(candidate_probs)) * 100)
+        else:
+            confidence = float(predictions[predicted_index] * 100)
 
         # Convert index to disease label
         label = class_names[
